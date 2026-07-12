@@ -48,6 +48,7 @@ Which means:
 
 - **This is an undocumented API.** Anthropic could change or remove it at any time, and this app would break. It is not an official integration.
 - **Read-only.** The app never writes to the Keychain and never refreshes the token itself. If the token expires, the app tells you to open Claude Code, which refreshes it automatically.
+- **Only the access token is used.** The Keychain item also contains a long-lived `refreshToken` — this app never reads it, so it can't mint new tokens or touch your Claude Code session. It extracts `accessToken` (and its expiry), nothing else.
 - **Nothing leaves your machine** except the one authenticated request to `api.anthropic.com` every 2 minutes. No analytics, no third parties.
 
 ## Troubleshooting
