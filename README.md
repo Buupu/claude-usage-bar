@@ -43,12 +43,21 @@ Authorization: Bearer <token>
 anthropic-beta: oauth-2025-04-20
 ```
 
-Which means:
+Which means **this is an undocumented API** — Anthropic could change or remove it at any time, and this app would break. It is not an official integration.
 
-- **This is an undocumented API.** Anthropic could change or remove it at any time, and this app would break. It is not an official integration.
-- **Read-only.** The app never writes to the Keychain and never refreshes the token itself. If the token expires, the app tells you to open Claude Code, which refreshes it automatically.
-- **Only the access token is used.** The Keychain item also contains a long-lived `refreshToken` — this app never reads it, so it can't mint new tokens or touch your Claude Code session. It extracts `accessToken` (and its expiry), nothing else.
-- **Nothing leaves your machine** except the one authenticated request to `api.anthropic.com` every 2 minutes. No analytics, no third parties.
+## Security
+
+**No new access is created.** This app doesn't sign you in, doesn't request scopes, and doesn't mint credentials. It reads the token Claude Code already holds and calls the same endpoint Claude Code's `/usage` already calls — so installing it exposes your account to nothing that your existing Claude Code install doesn't already do. If you trust Claude Code on your machine, this app adds no new capability, only a new (small, auditable) codebase handling the same secret.
+
+How the token is handled, specifically:
+
+- **Read once per launch, held in memory only.** Never written to disk, never logged, never passed to another process. macOS asks for your approval the first time (that's the Keychain dialog — the OS working as intended, not being bypassed).
+- **Only the `accessToken` is read.** The Keychain item also contains a long-lived `refreshToken`; this app never touches it, so it can't mint new tokens or interfere with your Claude Code session. When the access token expires, the app just tells you to open Claude Code, which refreshes it itself.
+- **One destination, ever.** The token is sent solely to the hardcoded `https://api.anthropic.com` URL, over an ephemeral `URLSession` that refuses redirects and caches nothing to disk. There are no other endpoints, no analytics, no third parties.
+- **Keychain is never written to.** Strictly read-only.
+- **Injection-resistant.** The binary is signed with the hardened runtime, so `DYLD_INSERT_LIBRARIES`-style tricks can't piggyback on your Keychain approval to read the token through this app.
+
+Honest limitations: the app is ad-hoc signed (no paid Apple Developer identity), so each upgraded binary triggers one fresh Keychain prompt — and ultimately you're trusting this repository's source code. That's why it builds from source on your machine: the entire app is a few hundred lines of Swift you can read before running.
 
 ## Troubleshooting
 
