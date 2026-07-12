@@ -6,7 +6,6 @@ class ClaudeUsageBar < Formula
   license "MIT"
   head "https://github.com/Buupu/claude-usage-bar.git", branch: "main"
 
-  depends_on :macos
   depends_on macos: :sonoma
 
   def install
