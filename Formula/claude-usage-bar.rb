@@ -10,6 +10,11 @@ class ClaudeUsageBar < Formula
 
   def install
     system "swift", "build", "--disable-sandbox", "-c", "release"
+    # Ad-hoc sign with the hardened runtime: blocks DYLD_INSERT_LIBRARIES
+    # injection, so nothing can piggyback on the app's Keychain "Always
+    # Allow" grant to read the Claude Code token silently.
+    system "codesign", "--force", "--sign", "-", "--options", "runtime",
+           ".build/release/claude-usage-bar"
     bin.install ".build/release/claude-usage-bar"
   end
 

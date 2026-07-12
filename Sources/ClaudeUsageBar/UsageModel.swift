@@ -186,6 +186,14 @@ final class UsageModel: ObservableObject {
 
     // MARK: API
 
+    // Ephemeral (nothing cached to disk) and refuses redirects, so the bearer
+    // token can only ever be sent to the one hardcoded URL.
+    private static let session = URLSession(
+        configuration: .ephemeral,
+        delegate: NoRedirectDelegate(),
+        delegateQueue: nil
+    )
+
     private static func fetchUsage(token: String) async throws -> UsageSnapshot {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -195,7 +203,7 @@ final class UsageModel: ObservableObject {
 
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch {
             throw UsageError.network(error.localizedDescription)
         }
@@ -223,6 +231,18 @@ final class UsageModel: ObservableObject {
             throw UsageError.parsing
         }
         return snapshot
+    }
+}
+
+private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil) // a denied redirect surfaces as badResponse(3xx)
     }
 }
 
