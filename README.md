@@ -4,22 +4,9 @@ Your **real** Claude usage in the macOS menu bar — the same numbers Claude Cod
 
 A native SwiftUI app: session and weekly usage rings, per-model limits, reset times in your local timezone, extra-usage spend. Follows your system light/dark appearance. The menu bar shows whichever limit is closest to capping, turning orange at 70% and red at 90%.
 
-```
-✳ 42%
-┌──────────────────────────────┐
-│  Claude Usage                │
-│                              │
-│    ◔ 42%          ◕ 12%     │
-│   Session         Weekly     │
-│  resets 18:40  resets Mon 9  │
-│                              │
-│  Weekly · Opus ━━━━──── 23%  │
-│                              │
-│  Extra usage    £0 / £30     │
-│  ──────────────────────────  │
-│  Updated 12:04      ↗ ⟳ ⏻   │
-└──────────────────────────────┘
-```
+<img width="307" height="385" alt="Screenshot 2026-07-12 at 20 14 51" src="https://github.com/user-attachments/assets/fdd8d1ef-78c9-4604-ad3d-11bd75974c36" />
+<img width="1512" height="34" alt="Screenshot 2026-07-12 at 20 13 04" src="https://github.com/user-attachments/assets/e6e10ab4-267c-45eb-90e4-517a3fff448a" />
+
 
 ## Requirements
 
