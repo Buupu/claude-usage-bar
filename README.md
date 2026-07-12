@@ -53,7 +53,7 @@ How the token is handled, specifically:
 
 - **Read once per launch, held in memory only.** Never written to disk, never logged, never passed to another process. macOS asks for your approval the first time (that's the Keychain dialog — the OS working as intended, not being bypassed).
 - **Only the `accessToken` is read.** The Keychain item also contains a long-lived `refreshToken`; this app never touches it, so it can't mint new tokens or interfere with your Claude Code session. When the access token expires, the app just tells you to open Claude Code, which refreshes it itself.
-- **One destination, ever.** The token is sent solely to the hardcoded `https://api.anthropic.com` URL, over an ephemeral `URLSession` that refuses redirects and caches nothing to disk. There are no other endpoints, no analytics, no third parties.
+- **One destination, ever.** The token is sent solely to the hardcoded `https://api.anthropic.com` URL — one request every 3 minutes — over an ephemeral `URLSession` that refuses redirects and caches nothing to disk. There are no other endpoints, no analytics, no third parties.
 - **Keychain is never written to.** Strictly read-only.
 - **Injection-resistant.** The binary is signed with the hardened runtime, so `DYLD_INSERT_LIBRARIES`-style tricks can't piggyback on your Keychain approval to read the token through this app.
 
@@ -66,6 +66,7 @@ Honest limitations: the app is ad-hoc signed (no paid Apple Developer identity),
 | `✳ sign in` | No credentials in Keychain — run `claude` in a terminal and sign in |
 | `✳ expired` | Token lapsed — open Claude Code once, it refreshes automatically |
 | `✳ offline` | Couldn't reach `api.anthropic.com` |
+| `✳ ⏳` | Rate limited — the app backs off and retries automatically |
 | `✳ ⚠︎` | Unexpected API response — open an issue with the popover text |
 
 Prefer a scriptable, zero-build version? The original SwiftBar plugin lives at the [`swiftbar-plugin`](https://github.com/Buupu/claude-usage-bar/tree/swiftbar-plugin) tag.

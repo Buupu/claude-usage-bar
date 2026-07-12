@@ -8,6 +8,12 @@ struct UsageView: View {
         VStack(alignment: .leading, spacing: 14) {
             header
 
+            if let error = model.error, model.snapshot != nil {
+                // We still have (stale) numbers, but the last refresh failed —
+                // say so visibly rather than hiding it in a tooltip.
+                errorBanner(error)
+            }
+
             if let snapshot = model.snapshot {
                 content(snapshot)
             } else if let error = model.error {
@@ -23,7 +29,7 @@ struct UsageView: View {
         }
         .padding(16)
         .frame(width: 292)
-        .onAppear { Task { await model.refresh() } }
+        .onAppear { Task { await model.refreshIfStale() } }
     }
 
     // MARK: Header
@@ -33,13 +39,21 @@ struct UsageView: View {
             Text("Claude Usage")
                 .font(.headline)
             Spacer()
-            if let error = model.error, model.snapshot != nil {
-                // Stale data indicator: we have numbers, but the last refresh failed.
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .help(error.errorDescription ?? "Refresh failed")
-            }
         }
+    }
+
+    private func errorBanner(_ error: UsageError) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(error.errorDescription ?? "Refresh failed")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.orange)
+            Text(error.hint)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: Content

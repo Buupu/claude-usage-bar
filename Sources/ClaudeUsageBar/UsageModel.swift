@@ -55,15 +55,17 @@ struct UsageSnapshot: Decodable {
 enum UsageError: LocalizedError {
     case noCredentials
     case tokenExpired
-    case badResponse(Int)
+    case rateLimited(until: Date?)
+    case badResponse(Int, String?)
     case network(String)
-    case parsing
+    case parsing(String?)
 
     var errorDescription: String? {
         switch self {
         case .noCredentials: return "Not signed in to Claude Code"
         case .tokenExpired: return "Claude Code token expired"
-        case .badResponse(let code): return "Anthropic API returned HTTP \(code)"
+        case .rateLimited: return "Rate limited by Anthropic"
+        case .badResponse(let code, _): return "Anthropic API returned HTTP \(code)"
         case .network: return "Couldn't reach api.anthropic.com"
         case .parsing: return "Unexpected API response"
         }
@@ -71,10 +73,22 @@ enum UsageError: LocalizedError {
 
     var hint: String {
         switch self {
-        case .noCredentials: return "Run `claude` in a terminal and sign in, then refresh."
-        case .tokenExpired: return "Open Claude Code — it refreshes the token automatically."
-        case .badResponse, .parsing: return "The undocumented usage endpoint may have changed. Please open an issue."
-        case .network: return "Check your connection, then refresh."
+        case .noCredentials:
+            return "Run `claude` in a terminal and sign in, then refresh."
+        case .tokenExpired:
+            return "Open Claude Code — it refreshes the token automatically."
+        case .rateLimited(let until):
+            if let until {
+                return "Too many requests — retrying after \(until.formatted(date: .omitted, time: .shortened))."
+            }
+            return "Too many requests — retrying automatically in a few minutes."
+        case .badResponse(_, let body):
+            if let body, !body.isEmpty { return body }
+            return "The undocumented usage endpoint may have changed. Please open an issue."
+        case .parsing(let detail):
+            return detail ?? "The undocumented usage endpoint may have changed. Please open an issue."
+        case .network:
+            return "Check your connection, then refresh."
         }
     }
 
@@ -82,6 +96,7 @@ enum UsageError: LocalizedError {
         switch self {
         case .noCredentials: return "sign in"
         case .tokenExpired: return "expired"
+        case .rateLimited: return "⏳"
         case .network: return "offline"
         case .badResponse, .parsing: return "⚠︎"
         }
@@ -105,11 +120,14 @@ final class UsageModel: ObservableObject {
     private var cachedToken: String?
     private var tokenExpiry: Date?
 
+    // Set after a 429 — refreshes are skipped until this passes.
+    private var backoffUntil: Date?
+
     init() {
         refreshLoop = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                try? await Task.sleep(for: .seconds(120))
+                try? await Task.sleep(for: .seconds(180))
             }
         }
     }
@@ -122,26 +140,36 @@ final class UsageModel: ObservableObject {
         return "✳ \(Int(percent))%"
     }
 
+    /// Refresh only if the data is stale — used on panel open so that
+    /// showing the popover repeatedly doesn't spam the endpoint.
+    func refreshIfStale() async {
+        if let lastUpdated, Date().timeIntervalSince(lastUpdated) < 60 { return }
+        await refresh()
+    }
+
     func refresh() async {
+        if let backoffUntil, backoffUntil > Date() { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            snapshot = try await Self.fetchUsage(token: try validToken())
-            error = nil
-            lastUpdated = Date()
-        } catch UsageError.tokenExpired {
-            // Claude Code may have rotated the token since we cached it —
-            // re-read the Keychain once before giving up.
-            cachedToken = nil
             do {
                 snapshot = try await Self.fetchUsage(token: try validToken())
-                error = nil
-                lastUpdated = Date()
-            } catch {
-                self.error = (error as? UsageError) ?? .network(error.localizedDescription)
+            } catch UsageError.tokenExpired {
+                // Claude Code may have rotated the token since we cached it —
+                // re-read the Keychain once before giving up.
+                cachedToken = nil
+                snapshot = try await Self.fetchUsage(token: try validToken())
             }
+            error = nil
+            backoffUntil = nil
+            lastUpdated = Date()
         } catch {
-            self.error = (error as? UsageError) ?? .network(error.localizedDescription)
+            let usageError = (error as? UsageError) ?? .network(error.localizedDescription)
+            if case .rateLimited(let until) = usageError {
+                backoffUntil = until ?? Date().addingTimeInterval(600)
+            }
+            self.error = usageError
+            fputs("[claude-usage-bar] \(usageError.errorDescription ?? "error"): \(usageError.hint)\n", stderr)
         }
     }
 
@@ -172,7 +200,7 @@ final class UsageModel: ObservableObject {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let oauth = json["claudeAiOauth"] as? [String: Any],
               let token = oauth["accessToken"] as? String
-        else { throw UsageError.parsing }
+        else { throw UsageError.parsing("Keychain item didn't contain claudeAiOauth.accessToken") }
 
         // expiresAt is epoch milliseconds; fall back to 30 minutes if absent.
         let expiry: Date
@@ -209,8 +237,22 @@ final class UsageModel: ObservableObject {
         }
 
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            if http.statusCode == 401 || http.statusCode == 403 { throw UsageError.tokenExpired }
-            throw UsageError.badResponse(http.statusCode)
+            switch http.statusCode {
+            case 401, 403:
+                throw UsageError.tokenExpired
+            case 429:
+                var until: Date?
+                if let retryAfter = http.value(forHTTPHeaderField: "Retry-After"),
+                   let seconds = TimeInterval(retryAfter) {
+                    until = Date().addingTimeInterval(seconds)
+                }
+                throw UsageError.rateLimited(until: until)
+            default:
+                throw UsageError.badResponse(
+                    http.statusCode,
+                    String(data: data.prefix(160), encoding: .utf8)
+                )
+            }
         }
 
         let decoder = JSONDecoder()
@@ -227,10 +269,13 @@ final class UsageModel: ObservableObject {
                 debugDescription: "Unrecognised date: \(string)"
             ))
         }
-        guard let snapshot = try? decoder.decode(UsageSnapshot.self, from: data) else {
-            throw UsageError.parsing
+        do {
+            return try decoder.decode(UsageSnapshot.self, from: data)
+        } catch {
+            // Keep the decoder's explanation — "the endpoint may have
+            // changed" is useless without knowing what changed.
+            throw UsageError.parsing(String(String(describing: error).prefix(200)))
         }
-        return snapshot
     }
 }
 
