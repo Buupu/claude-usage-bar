@@ -1,8 +1,8 @@
 class ClaudeUsageBar < Formula
   desc "Real Claude usage in your macOS menu bar"
   homepage "https://github.com/Buupu/claude-usage-bar"
-  url "https://github.com/Buupu/claude-usage-bar/archive/refs/tags/v1.0.2.tar.gz"
-  sha256 "0e750fdbb48b4b8571038bbe65574d22dc30e188666aac0b001ffc5bc78e837f"
+  url "https://github.com/Buupu/claude-usage-bar/archive/refs/tags/v1.0.3.tar.gz"
+  sha256 "468cbba687fa47cf2b52b02968e48935b0bc8a48513054079242f4da29c9531c"
   license "MIT"
   head "https://github.com/Buupu/claude-usage-bar.git", branch: "main"
 
