@@ -99,6 +99,12 @@ final class UsageModel: ObservableObject {
 
     private var refreshLoop: Task<Void, Never>?
 
+    // Token cache — the Keychain is only read once per launch (or when the
+    // token expires / the API rejects it). Reading it on every refresh would
+    // trigger a Keychain permission dialog each time on some setups.
+    private var cachedToken: String?
+    private var tokenExpiry: Date?
+
     init() {
         refreshLoop = Task { [weak self] in
             while !Task.isCancelled {
@@ -120,20 +126,38 @@ final class UsageModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            let token = try Self.readToken()
-            snapshot = try await Self.fetchUsage(token: token)
+            snapshot = try await Self.fetchUsage(token: try validToken())
             error = nil
             lastUpdated = Date()
-        } catch let usageError as UsageError {
-            error = usageError
+        } catch UsageError.tokenExpired {
+            // Claude Code may have rotated the token since we cached it —
+            // re-read the Keychain once before giving up.
+            cachedToken = nil
+            do {
+                snapshot = try await Self.fetchUsage(token: try validToken())
+                error = nil
+                lastUpdated = Date()
+            } catch {
+                self.error = (error as? UsageError) ?? .network(error.localizedDescription)
+            }
         } catch {
-            self.error = .network(error.localizedDescription)
+            self.error = (error as? UsageError) ?? .network(error.localizedDescription)
         }
     }
 
     // MARK: Keychain
 
-    private static func readToken() throws -> String {
+    private func validToken() throws -> String {
+        if let cachedToken, let tokenExpiry, tokenExpiry > Date() {
+            return cachedToken
+        }
+        let credentials = try Self.readCredentials()
+        cachedToken = credentials.token
+        tokenExpiry = credentials.expiry
+        return credentials.token
+    }
+
+    private static func readCredentials() throws -> (token: String, expiry: Date) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "Claude Code-credentials",
@@ -149,7 +173,15 @@ final class UsageModel: ObservableObject {
               let oauth = json["claudeAiOauth"] as? [String: Any],
               let token = oauth["accessToken"] as? String
         else { throw UsageError.parsing }
-        return token
+
+        // expiresAt is epoch milliseconds; fall back to 30 minutes if absent.
+        let expiry: Date
+        if let expiresAt = oauth["expiresAt"] as? Double {
+            expiry = Date(timeIntervalSince1970: expiresAt > 1e12 ? expiresAt / 1000 : expiresAt)
+        } else {
+            expiry = Date().addingTimeInterval(30 * 60)
+        }
+        return (token, expiry)
     }
 
     // MARK: API
