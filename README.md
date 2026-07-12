@@ -17,6 +17,7 @@ A native SwiftUI app: session and weekly usage rings, per-model limits, reset ti
 
 ```sh
 brew tap buupu/claude-usage-bar https://github.com/Buupu/claude-usage-bar
+brew trust buupu/claude-usage-bar      # newer Homebrew requires trusting third-party taps
 brew install claude-usage-bar
 brew services start claude-usage-bar   # start now + at login
 ```
